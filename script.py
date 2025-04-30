@@ -4,14 +4,15 @@ from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, precision_score, recall_score
 import optuna
+import os
 
-st.title("Malware Detection Optimization")
+st.title("Détection de Malware")
 
-# Chargement des données
-st.sidebar.header("Dataset Upload")
+st.sidebar.header("Configuration")
 
-# Option de chargement d'un fichier par défaut
-default_file_path = "C:/Users/DELL/PycharmProjects/malware/DatasetmalwareExtrait.csv"  # Chemin par défaut du fichier
+# Section pour le dataset d'entraînement
+st.sidebar.subheader("Dataset d'entraînement")
+default_file_path = "C:/Users/DELL/PycharmProjects/malware/DatasetmalwareExtrait.csv" 
 use_default = st.sidebar.checkbox("Utiliser le dataset par défaut", value=True)
 
 if use_default:
@@ -30,8 +31,12 @@ else:
         st.warning("Veuillez téléverser un fichier CSV ou utiliser le fichier par défaut.")
         dataset = None
 
+# Section pour la prédiction
+st.sidebar.subheader("Prédiction de nouveaux fichiers")
+prediction_file = st.sidebar.file_uploader("Upload fichier à analyser", type=["csv"])
+
 if dataset is not None:
-    st.write("Aperçu des données :", dataset.head())
+    st.write("Aperçu des données d'entraînement :", dataset.head())
 
     # Séparation des features et des labels
     x = dataset.drop(columns=["legitimate"])
@@ -39,17 +44,6 @@ if dataset is not None:
 
     # Division des données
     x_train, x_test, y_train, y_test = train_test_split(x, y, train_size=0.7, random_state=42)
-
-    # Modèle sans optimisation
-    baseline_model = DecisionTreeClassifier(random_state=42)
-    baseline_model.fit(x_train, y_train)
-    baseline_y_pred = baseline_model.predict(x_test)
-
-    # Calcul des métriques pour le modèle sans optimisation
-    baseline_precision = precision_score(y_test, baseline_y_pred)
-    baseline_recall = recall_score(y_test, baseline_y_pred)
-    baseline_f1 = f1_score(y_test, baseline_y_pred)
-    baseline_conf_matrix = confusion_matrix(y_test, baseline_y_pred)
 
     # Optimisation avec Optuna
     st.sidebar.header("Optimisation des paramètres")
@@ -70,10 +64,11 @@ if dataset is not None:
         y_pred = model.predict(x_test)
         return f1_score(y_test, y_pred)
 
-    st.write("Running Optuna optimization...")
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=n_trials)
+    with st.spinner("Optimisation en cours..."):
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=n_trials)
 
+    st.success("Optimisation terminée !")
     st.write("Meilleurs paramètres :", study.best_params)
 
     # Modèle avec paramètres optimisés
@@ -87,23 +82,40 @@ if dataset is not None:
     optimized_f1 = f1_score(y_test, y_pred_optimized)
     optimized_conf_matrix = confusion_matrix(y_test, y_pred_optimized)
 
-    # Tableau de comparaison des résultats
+    # Affichage des résultats
+    st.subheader("Performance du modèle")
     results = pd.DataFrame({
-        "Modèle": ["Sans optimisation", "Avec optimisation"],
-        "Precision": [baseline_precision, optimized_precision],
-        "Recall": [baseline_recall, optimized_recall],
-        "F1-Score": [baseline_f1, optimized_f1]
+        "Métrique": ["Precision", "Recall", "F1-Score"],
+        "Valeur": [optimized_precision, optimized_recall, optimized_f1]
     })
-
-    st.write("Comparaison des modèles :")
     st.write(results)
 
-    # Affichage des matrices de confusion
-    st.write("Matrice de confusion - Modèle sans optimisation :")
-    st.text(baseline_conf_matrix)
-
-    st.write("Matrice de confusion - Modèle avec optimisation :")
-    st.text(optimized_conf_matrix)
+    # Section de prédiction
+    if prediction_file is not None:
+        st.subheader("Analyse du nouveau fichier")
+        try:
+            new_data = pd.read_csv(prediction_file)
+            prediction = optimized_model.predict(new_data)
+            
+            # Affichage des résultats de prédiction
+            for i, pred in enumerate(prediction):
+                if pred == 1:
+                    st.error(f"⚠️ Fichier {i+1} : Malware détecté !")
+                else:
+                    st.success(f"✅ Fichier {i+1} : Fichier légitime")
+            
+            # Statistiques globales
+            total_files = len(prediction)
+            malware_count = sum(prediction)
+            legitimate_count = total_files - malware_count
+            
+            st.write(f"Résumé de l'analyse :")
+            st.write(f"- Nombre total de fichiers analysés : {total_files}")
+            st.write(f"- Nombre de malwares détectés : {malware_count}")
+            st.write(f"- Nombre de fichiers légitimes : {legitimate_count}")
+            
+        except Exception as e:
+            st.error(f"Erreur lors de l'analyse du fichier : {str(e)}")
 
 else:
-    st.warning("Aucun dataset disponible pour le traitement.")
+    st.warning("Veuillez d'abord charger un dataset d'entraînement.")
